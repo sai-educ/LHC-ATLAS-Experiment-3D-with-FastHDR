@@ -183,99 +183,121 @@
         let collisionInProgress = false;
         
         const params = {
-            exposure: 1.0,
-            bloomStrength: 1.5,
-            bloomThreshold: 0.3,
-            bloomRadius: 0.4,
+            exposure: 5.0,
+            bloomStrength: 2.5,
+            bloomThreshold: 0.2,
+            bloomRadius: 0.8,
             magneticFieldStrength: 2.0,
             particleCount: 0,
             traceLength: 100,
             autoRotate: false,
             showTraces: true,
             showGrid: true,
-            collisionEnergy: 14
+            collisionEnergy: 14,
+            particleGlow: 2.0
         };
 
-        // Particle types with properties
+        // Particle types with properties - Enhanced with bloom settings
         const ParticleTypes = {
             PHOTON: { 
                 color: 0x00ff00, 
                 charge: 0, 
                 mass: 0, 
                 name: 'Photon',
-                maxPenetration: 100 // Stops at EM Calorimeter
+                maxPenetration: 100,
+                emissiveIntensity: 3.0
             },
             ELECTRON: { 
                 color: 0x00a8ff, 
                 charge: -1, 
                 mass: 0.511, 
                 name: 'Electron',
-                maxPenetration: 100 // Stops at EM Calorimeter
+                maxPenetration: 100,
+                emissiveIntensity: 2.5
             },
             POSITRON: { 
                 color: 0x00ffff, 
                 charge: 1, 
                 mass: 0.511, 
                 name: 'Positron',
-                maxPenetration: 100 // Stops at EM Calorimeter
+                maxPenetration: 100,
+                emissiveIntensity: 2.5
             },
             MUON: { 
                 color: 0xff00ff, 
                 charge: -1, 
                 mass: 105.7, 
                 name: 'Muon',
-                maxPenetration: 250 // Goes through all layers
+                maxPenetration: 250,
+                emissiveIntensity: 3.5
             },
             ANTIMUON: { 
                 color: 0xff88ff, 
                 charge: 1, 
                 mass: 105.7, 
                 name: 'Anti-muon',
-                maxPenetration: 250 // Goes through all layers
+                maxPenetration: 250,
+                emissiveIntensity: 3.5
             },
             PION: { 
                 color: 0xff6b00, 
                 charge: 1, 
                 mass: 139.6, 
                 name: 'Pion',
-                maxPenetration: 150 // Stops at Hadronic Calorimeter
+                maxPenetration: 150,
+                emissiveIntensity: 2.0
             },
             KAON: { 
                 color: 0xffa500, 
                 charge: 1, 
                 mass: 493.7, 
                 name: 'Kaon',
-                maxPenetration: 150 // Stops at Hadronic Calorimeter
+                maxPenetration: 150,
+                emissiveIntensity: 2.0
             },
             NEUTRINO: { 
                 color: 0xffff00, 
                 charge: 0, 
                 mass: 0, 
                 name: 'Neutrino',
-                maxPenetration: 300 // Invisible, goes through everything
+                maxPenetration: 300,
+                emissiveIntensity: 0.5
             }
         };
 
-        // Beam Particle class for collision
+        // Beam Particle class for collision - Enhanced bloom
         class BeamParticle {
             constructor(startZ, direction) {
                 this.position = new THREE.Vector3(0, 0, startZ);
                 this.velocity = new THREE.Vector3(0, 0, direction * 50);
                 
-                // Create mesh for beam particle (proton)
-                const geometry = new THREE.SphereGeometry(2, 16, 12);
+                // Create mesh for beam particle (proton) with enhanced bloom
+                const geometry = new THREE.SphereGeometry(3, 16, 12);
                 const material = new THREE.MeshPhysicalMaterial({
                     color: 0xffffff,
                     emissive: 0xffffff,
-                    emissiveIntensity: 3,
+                    emissiveIntensity: 5,
                     metalness: 0,
                     roughness: 0,
                     clearcoat: 1.0,
-                    clearcoatRoughness: 0.0
+                    clearcoatRoughness: 0.0,
+                    transparent: true,
+                    opacity: 1.0
                 });
                 
                 this.mesh = new THREE.Mesh(geometry, material);
                 this.mesh.position.copy(this.position);
+                
+                // Add glow sphere around beam particle
+                const glowGeometry = new THREE.SphereGeometry(8, 16, 12);
+                const glowMaterial = new THREE.MeshBasicMaterial({
+                    color: 0xffffff,
+                    transparent: true,
+                    opacity: 0.3,
+                    side: THREE.BackSide
+                });
+                this.glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
+                this.mesh.add(this.glowMesh);
                 
                 // Trail for beam particle
                 this.trail = [];
@@ -285,6 +307,10 @@
                 const deltaPos = this.velocity.clone().multiplyScalar(deltaTime);
                 this.position.add(deltaPos);
                 this.mesh.position.copy(this.position);
+                
+                // Pulse the glow
+                const pulse = Math.sin(Date.now() * 0.01) * 0.2 + 1.0;
+                this.glowMesh.scale.setScalar(pulse);
                 
                 // Add to trail
                 this.trail.push({
@@ -299,7 +325,7 @@
             }
         }
 
-        // Particle class
+        // Particle class - Enhanced bloom effects
         class Particle {
             constructor(type = null, position = null, velocity = null) {
                 // Choose random particle type if not specified
@@ -322,15 +348,15 @@
                 this.maxLifetime = 300;
                 this.active = true;
                 
-                // Create mesh
-                const size = this.type.name === 'Neutrino' ? 0.3 : 0.5;
+                // Create mesh with enhanced bloom
+                const size = this.type.name === 'Neutrino' ? 0.3 : 0.8;
                 const geometry = new THREE.SphereGeometry(size, 8, 6);
                 const material = new THREE.MeshPhysicalMaterial({
                     color: this.type.color,
                     emissive: this.type.color,
-                    emissiveIntensity: this.type.name === 'Neutrino' ? 0.1 : 0.5,
-                    metalness: 0.3,
-                    roughness: 0.4,
+                    emissiveIntensity: this.type.emissiveIntensity * params.particleGlow,
+                    metalness: 0.1,
+                    roughness: 0.2,
                     clearcoat: 1.0,
                     clearcoatRoughness: 0.0,
                     transparent: this.type.name === 'Neutrino',
@@ -339,6 +365,19 @@
                 
                 this.mesh = new THREE.Mesh(geometry, material);
                 this.mesh.position.copy(this.position);
+                
+                // Add outer glow for high-energy particles
+                if (this.type.emissiveIntensity > 2.0) {
+                    const glowGeometry = new THREE.SphereGeometry(size * 2.5, 8, 6);
+                    const glowMaterial = new THREE.MeshBasicMaterial({
+                        color: this.type.color,
+                        transparent: true,
+                        opacity: 0.2,
+                        side: THREE.BackSide
+                    });
+                    this.glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
+                    this.mesh.add(this.glowMesh);
+                }
                 
                 // Trail positions
                 this.trail = [];
@@ -362,11 +401,18 @@
                 this.position.add(deltaPos);
                 this.mesh.position.copy(this.position);
                 
-                // Add to trail
+                // Pulse glow for high-energy particles
+                if (this.glowMesh) {
+                    const pulse = Math.sin(Date.now() * 0.005 + this.lifetime) * 0.15 + 1.0;
+                    this.glowMesh.scale.setScalar(pulse);
+                }
+                
+                // Add to trail with enhanced glow
                 if (params.showTraces) {
                     this.trail.push({
                         pos: this.position.clone(),
-                        opacity: 1.0
+                        opacity: 1.0,
+                        glow: this.type.emissiveIntensity > 2.0
                     });
                     
                     // Limit trail length
@@ -376,7 +422,7 @@
                     
                     // Fade trail
                     this.trail.forEach((point, i) => {
-                        point.opacity = (i / this.trail.length) * 0.5;
+                        point.opacity = (i / this.trail.length) * 0.7;
                     });
                 }
                 
@@ -419,7 +465,7 @@
                 const material = new THREE.MeshPhysicalMaterial({
                     color: color,
                     transparent: true,
-                    opacity: 0.15,
+                    opacity: 0.2,
                     side: THREE.DoubleSide,
                     metalness: 0.2,
                     roughness: 0.8,
@@ -440,7 +486,7 @@
                 const elementMaterial = new THREE.MeshPhysicalMaterial({
                     color: this.color,
                     emissive: this.color,
-                    emissiveIntensity: 0.1,
+                    emissiveIntensity: 0.2,
                     metalness: 0.8,
                     roughness: 0.2
                 });
@@ -487,7 +533,7 @@
             renderer.toneMappingExposure = params.exposure;
             container.appendChild(renderer.domElement);
 
-            // Post-processing
+            // Post-processing with enhanced bloom
             composer = new EffectComposer(renderer);
             const renderPass = new RenderPass(scene, camera);
             composer.addPass(renderPass);
@@ -510,10 +556,10 @@
             controls.autoRotateSpeed = 0.5;
 
             // Lights
-            const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+            const ambientLight = new THREE.AmbientLight(0x404040, 1.0);
             scene.add(ambientLight);
 
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
             directionalLight.position.set(100, 100, 50);
             directionalLight.castShadow = true;
             directionalLight.shadow.camera.near = 0.1;
@@ -525,7 +571,7 @@
             scene.add(directionalLight);
 
             // Point lights for dramatic effect
-            const pointLight1 = new THREE.PointLight(0x00ffff, 1, 300);
+            const pointLight1 = new THREE.PointLight(0x00ffff, 2, 300);
             pointLight1.position.set(0, 0, 0);
             scene.add(pointLight1);
 
@@ -678,15 +724,17 @@
         }
 
         function createCollisionExplosion() {
-            // Create bright flash at collision point
-            const flash = new THREE.PointLight(0xffffff, 10, 300);
+            // Create bright flash at collision point with enhanced bloom
+            const flash = new THREE.PointLight(0xffffff, 30, 500);
             flash.position.set(0, 0, 0);
             scene.add(flash);
             
-            // Create expanding sphere effect
+            // Create expanding sphere effect with bloom
             const sphereGeometry = new THREE.SphereGeometry(1, 32, 16);
             const sphereMaterial = new THREE.MeshBasicMaterial({
                 color: 0xffffff,
+                emissive: 0xffffff,
+                emissiveIntensity: 10,
                 transparent: true,
                 opacity: 1,
                 side: THREE.BackSide
@@ -694,17 +742,37 @@
             const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
             scene.add(sphere);
             
+            // Create secondary shockwave
+            const shockwaveGeometry = new THREE.RingGeometry(1, 2, 64);
+            const shockwaveMaterial = new THREE.MeshBasicMaterial({
+                color: 0x00ffff,
+                emissive: 0x00ffff,
+                emissiveIntensity: 5,
+                transparent: true,
+                opacity: 0.8,
+                side: THREE.DoubleSide
+            });
+            const shockwave = new THREE.Mesh(shockwaveGeometry, shockwaveMaterial);
+            shockwave.rotation.x = Math.PI / 2;
+            scene.add(shockwave);
+            
             // Animate explosion
             const animateExplosion = () => {
                 flash.intensity *= 0.92;
                 sphere.scale.multiplyScalar(1.15);
                 sphereMaterial.opacity *= 0.95;
+                sphereMaterial.emissiveIntensity *= 0.95;
+                
+                shockwave.scale.multiplyScalar(1.2);
+                shockwaveMaterial.opacity *= 0.93;
+                shockwaveMaterial.emissiveIntensity *= 0.93;
                 
                 if (flash.intensity > 0.01) {
                     requestAnimationFrame(animateExplosion);
                 } else {
                     scene.remove(flash);
                     scene.remove(sphere);
+                    scene.remove(shockwave);
                 }
             };
             
@@ -817,17 +885,25 @@
             const gui = new GUI();
 
             const renderFolder = gui.addFolder('Rendering');
-            renderFolder.add(params, 'exposure', 0, 3).onChange(value => {
+            renderFolder.add(params, 'exposure', 0, 10).onChange(value => {
                 renderer.toneMappingExposure = value;
             });
-            renderFolder.add(params, 'bloomStrength', 0, 3).onChange(value => {
+            renderFolder.add(params, 'bloomStrength', 0, 5).onChange(value => {
                 bloomPass.strength = value;
             });
             renderFolder.add(params, 'bloomThreshold', 0, 1).onChange(value => {
                 bloomPass.threshold = value;
             });
-            renderFolder.add(params, 'bloomRadius', 0, 1).onChange(value => {
+            renderFolder.add(params, 'bloomRadius', 0, 2).onChange(value => {
                 bloomPass.radius = value;
+            });
+            renderFolder.add(params, 'particleGlow', 0.5, 5).onChange(value => {
+                // Update existing particles glow
+                particles.forEach(particle => {
+                    if (particle.mesh && particle.mesh.material) {
+                        particle.mesh.material.emissiveIntensity = particle.type.emissiveIntensity * value;
+                    }
+                });
             });
 
             const physicsFolder = gui.addFolder('Physics');
@@ -893,7 +969,7 @@
                 }
             }
             
-            // Update traces
+            // Update traces with enhanced glow
             if (params.showTraces) {
                 updateTraces();
             }
@@ -910,17 +986,18 @@
             // Clear existing trace geometry
             traceGroup.clear();
             
-            // Draw traces for active particles
+            // Draw traces for active particles with enhanced glow
             particles.forEach(particle => {
                 if (particle.trail.length > 1 && particle.active) {
                     const points = particle.trail.map(t => t.pos);
                     const geometry = new THREE.BufferGeometry().setFromPoints(points);
                     
+                    // Enhanced trail material with glow
                     const material = new THREE.LineBasicMaterial({
                         color: particle.type.color,
                         transparent: true,
-                        opacity: particle.type.name === 'Neutrino' ? 0.2 : 0.5,
-                        linewidth: 1
+                        opacity: particle.type.name === 'Neutrino' ? 0.2 : 0.7,
+                        linewidth: particle.trail[0].glow ? 2 : 1
                     });
                     
                     const line = new THREE.Line(geometry, material);
@@ -928,7 +1005,7 @@
                 }
             });
             
-            // Draw beam traces
+            // Draw beam traces with enhanced glow
             beamParticles.forEach(beam => {
                 if (beam.trail.length > 1) {
                     const points = beam.trail.map(t => t.pos);
@@ -937,8 +1014,8 @@
                     const material = new THREE.LineBasicMaterial({
                         color: 0xffffff,
                         transparent: true,
-                        opacity: 0.8,
-                        linewidth: 2
+                        opacity: 1.0,
+                        linewidth: 3
                     });
                     
                     const line = new THREE.Line(geometry, material);
