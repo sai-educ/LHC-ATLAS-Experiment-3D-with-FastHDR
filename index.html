@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>LHC ATLAS Detector - 3D Particle Collision Simulation</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #000;
+            overflow: hidden;
+            color: #fff;
+        }
+        
+        #container {
+            width: 100%;
+            height: 100vh;
+            position: relative;
+        }
+        
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            z-index: 100;
+            display: block;
+            color: #fff;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+            pointer-events: none;
+        }
+        
+        #info a {
+            color: #47a3ff;
+            text-decoration: none;
+        }
+        
+        #info a:hover {
+            text-decoration: underline;
+        }
+        
+        #detector-info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            padding: 10px;
+            background: rgba(0,0,0,0.7);
+            border-radius: 5px;
+            font-size: 12px;
+            max-width: 300px;
+            z-index: 100;
+        }
+        
+        .layer-info {
+            margin: 5px 0;
+            display: flex;
+            align-items: center;
+        }
+        
+        .layer-color {
+            width: 15px;
+            height: 15px;
+            border-radius: 3px;
+            margin-right: 8px;
+            box-shadow: 0 0 3px rgba(255,255,255,0.3);
+        }
+        
+        #controls {
+            position: absolute;
+            top: 50px;
+            right: 10px;
+            z-index: 100;
+        }
+        
+        #collision-button {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-size: 16px;
+            cursor: pointer;
+            z-index: 100;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        #collision-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        
+        #collision-button:active {
+            transform: translateY(0);
+        }
+        
+        #collision-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        #beam-status {
+            position: absolute;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 8px 16px;
+            background: rgba(0,0,0,0.8);
+            border-radius: 20px;
+            font-size: 14px;
+            color: #00ff00;
+            display: none;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    <div id="info">
+        <strong>LHC ATLAS Detector</strong> - 3D Particle Collision Simulation<br/>
+        <span style="font-size: 12px">Scroll to zoom • Drag to rotate • Press <strong>C</strong> or click button for collision event</span>
+    </div>
+    
+    <div id="detector-info">
+        <strong>Detector Layers:</strong>
+        <div class="layer-info">
+            <div class="layer-color" style="background: rgba(100, 255, 100, 0.8);"></div>
+            <span>Inner Detector (Tracking)</span>
+        </div>
+        <div class="layer-info">
+            <div class="layer-color" style="background: rgba(0, 255, 255, 0.8);"></div>
+            <span>EM Calorimeter</span>
+        </div>
+        <div class="layer-info">
+            <div class="layer-color" style="background: rgba(255, 165, 0, 0.8);"></div>
+            <span>Hadronic Calorimeter</span>
+        </div>
+        <div class="layer-info">
+            <div class="layer-color" style="background: rgba(255, 0, 0, 0.8);"></div>
+            <span>Muon Spectrometer</span>
+        </div>
+        <br/>
+        <strong>Particles:</strong> <span id="particle-count">0</span><br/>
+        <strong>Magnetic Field:</strong> <span id="field-strength">2T</span><br/>
+        <strong>Collision Energy:</strong> 14 TeV
+    </div>
+    
+    <button id="collision-button">Trigger Collision Event</button>
+    <div id="beam-status">BEAMS COLLIDING</div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.159.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.159.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+        import Stats from 'three/addons/libs/stats.module.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        // Global variables
+        let container, stats;
+        let camera, scene, renderer, controls;
+        let composer, bloomPass;
+        let particles = [];
+        let beamParticles = [];
+        let particleTraces = [];
+        let detectorLayers = [];
+        let magneticField = new THREE.Vector3(0, 0, 2);
+        let particleGroup, traceGroup, beamGroup;
+        let collisionInProgress = false;
+        
+        const params = {
+            exposure: 1.0,
+            bloomStrength: 1.5,
+            bloomThreshold: 0.3,
+            bloomRadius: 0.4,
+            magneticFieldStrength: 2.0,
+            particleCount: 0,
+            traceLength: 100,
+            autoRotate: false,
+            showTraces: true,
+            showGrid: true,
+            collisionEnergy: 14
+        };
+
+        // Particle types with properties
+        const ParticleTypes = {
+            PHOTON: { 
+                color: 0x00ff00, 
+                charge: 0, 
+                mass: 0, 
+                name: 'Photon',
+                maxPenetration: 100 // Stops at EM Calorimeter
+            },
+            ELECTRON: { 
+                color: 0x00a8ff, 
+                charge: -1, 
+                mass: 0.511, 
+                name: 'Electron',
+                maxPenetration: 100 // Stops at EM Calorimeter
+            },
+            POSITRON: { 
+                color: 0x00ffff, 
+                charge: 1, 
+                mass: 0.511, 
+                name: 'Positron',
+                maxPenetration: 100 // Stops at EM Calorimeter
+            },
+            MUON: { 
+                color: 0xff00ff, 
+                charge: -1, 
+                mass: 105.7, 
+                name: 'Muon',
+                maxPenetration: 250 // Goes through all layers
+            },
+            ANTIMUON: { 
+                color: 0xff88ff, 
+                charge: 1, 
+                mass: 105.7, 
+                name: 'Anti-muon',
+                maxPenetration: 250 // Goes through all layers
+            },
+            PION: { 
+                color: 0xff6b00, 
+                charge: 1, 
+                mass: 139.6, 
+                name: 'Pion',
+                maxPenetration: 150 // Stops at Hadronic Calorimeter
+            },
+            KAON: { 
+                color: 0xffa500, 
+                charge: 1, 
+                mass: 493.7, 
+                name: 'Kaon',
+                maxPenetration: 150 // Stops at Hadronic Calorimeter
+            },
+            NEUTRINO: { 
+                color: 0xffff00, 
+                charge: 0, 
+                mass: 0, 
+                name: 'Neutrino',
+                maxPenetration: 300 // Invisible, goes through everything
+            }
+        };
+
+        // Beam Particle class for collision
+        class BeamParticle {
+            constructor(startZ, direction) {
+                this.position = new THREE.Vector3(0, 0, startZ);
+                this.velocity = new THREE.Vector3(0, 0, direction * 50);
+                
+                // Create mesh for beam particle (proton)
+                const geometry = new THREE.SphereGeometry(2, 16, 12);
+                const material = new THREE.MeshPhysicalMaterial({
+                    color: 0xffffff,
+                    emissive: 0xffffff,
+                    emissiveIntensity: 2,
+                    metalness: 0,
+                    roughness: 0,
+                    clearcoat: 1.0,
+                    clearcoatRoughness: 0.0
+                });
+                
+                this.mesh = new THREE.Mesh(geometry, material);
+                this.mesh.position.copy(this.position);
+                
+                // Trail for beam particle
+                this.trail = [];
+            }
+            
+            update(deltaTime) {
+                const deltaPos = this.velocity.clone().multiplyScalar(deltaTime);
+                this.position.add(deltaPos);
+                this.mesh.position.copy(this.position);
+                
+                // Add to trail
+                this.trail.push({
+                    pos: this.position.clone(),
+                    opacity: 1.0
+                });
+                
+                // Limit trail length
+                if (this.trail.length > 20) {
+                    this.trail.shift();
+                }
+            }
+        }
+
+        // Particle class
+        class Particle {
+            constructor(type = null, position = null, velocity = null) {
+                // Choose random particle type if not specified
+                const types = Object.keys(ParticleTypes);
+                const typeKey = type || types[Math.floor(Math.random() * types.length)];
+                this.type = ParticleTypes[typeKey];
+                
+                this.position = position || new THREE.Vector3(0, 0, 0);
+                
+                this.velocity = velocity || new THREE.Vector3(
+                    (Math.random() - 0.5) * 30,
+                    (Math.random() - 0.5) * 30,
+                    (Math.random() - 0.5) * 30
+                );
+                
+                this.charge = this.type.charge;
+                this.mass = this.type.mass || 1;
+                this.momentum = this.velocity.length() * this.mass;
+                this.lifetime = 0;
+                this.maxLifetime = 300;
+                this.active = true;
+                
+                // Create mesh
+                const size = this.type.name === 'Neutrino' ? 0.3 : 0.5;
+                const geometry = new THREE.SphereGeometry(size, 8, 6);
+                const material = new THREE.MeshPhysicalMaterial({
+                    color: this.type.color,
+                    emissive: this.type.color,
+                    emissiveIntensity: this.type.name === 'Neutrino' ? 0.1 : 0.5,
+                    metalness: 0.3,
+                    roughness: 0.4,
+                    clearcoat: 1.0,
+                    clearcoatRoughness: 0.0,
+                    transparent: this.type.name === 'Neutrino',
+                    opacity: this.type.name === 'Neutrino' ? 0.3 : 1.0
+                });
+                
+                this.mesh = new THREE.Mesh(geometry, material);
+                this.mesh.position.copy(this.position);
+                
+                // Trail positions
+                this.trail = [];
+            }
+            
+            update(deltaTime) {
+                if (!this.active) return;
+                
+                // Apply Lorentz force if charged
+                if (this.charge !== 0) {
+                    const lorentzForce = new THREE.Vector3().crossVectors(
+                        this.velocity,
+                        magneticField
+                    ).multiplyScalar(this.charge * 0.01 / (this.mass || 1));
+                    
+                    this.velocity.add(lorentzForce);
+                }
+                
+                // Update position
+                const deltaPos = this.velocity.clone().multiplyScalar(deltaTime);
+                this.position.add(deltaPos);
+                this.mesh.position.copy(this.position);
+                
+                // Add to trail
+                if (params.showTraces) {
+                    this.trail.push({
+                        pos: this.position.clone(),
+                        opacity: 1.0
+                    });
+                    
+                    // Limit trail length
+                    if (this.trail.length > params.traceLength) {
+                        this.trail.shift();
+                    }
+                    
+                    // Fade trail
+                    this.trail.forEach((point, i) => {
+                        point.opacity = (i / this.trail.length) * 0.5;
+                    });
+                }
+                
+                // Check boundaries and lifetime
+                this.lifetime++;
+                const distance = this.position.length();
+                
+                // Check penetration depth based on particle type
+                if (distance > this.type.maxPenetration) {
+                    // Particle stops at detector layer
+                    this.velocity.multiplyScalar(0.9); // Slow down
+                    if (this.velocity.length() < 0.1) {
+                        this.active = false;
+                        this.mesh.visible = false;
+                    }
+                }
+                
+                // Remove if too far or too old
+                if (distance > 300 || this.lifetime > this.maxLifetime) {
+                    this.active = false;
+                    this.mesh.visible = false;
+                }
+            }
+        }
+
+        // Detector Layer class
+        class DetectorLayer {
+            constructor(radius, name, color, segments = 24) {
+                this.radius = radius;
+                this.name = name;
+                this.color = color;
+                this.group = new THREE.Group();
+                
+                // Create cylindrical detector segments
+                const height = 400;
+                const geometry = new THREE.CylinderGeometry(
+                    radius, radius, height, segments, 1, true
+                );
+                
+                const material = new THREE.MeshPhysicalMaterial({
+                    color: color,
+                    transparent: true,
+                    opacity: 0.15,
+                    side: THREE.DoubleSide,
+                    metalness: 0.2,
+                    roughness: 0.8,
+                    clearcoat: 0.3,
+                    clearcoatRoughness: 0.5
+                });
+                
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.rotation.x = Math.PI / 2;
+                this.group.add(mesh);
+                
+                // Add detector elements
+                this.addDetectorElements();
+            }
+            
+            addDetectorElements() {
+                const elementGeometry = new THREE.BoxGeometry(5, 5, 20);
+                const elementMaterial = new THREE.MeshPhysicalMaterial({
+                    color: this.color,
+                    emissive: this.color,
+                    emissiveIntensity: 0.1,
+                    metalness: 0.8,
+                    roughness: 0.2
+                });
+                
+                const numElements = 24;
+                for (let i = 0; i < numElements; i++) {
+                    const angle = (i / numElements) * Math.PI * 2;
+                    const x = Math.cos(angle) * this.radius;
+                    const y = Math.sin(angle) * this.radius;
+                    
+                    for (let z = -180; z <= 180; z += 60) {
+                        const element = new THREE.Mesh(elementGeometry, elementMaterial);
+                        element.position.set(x, y, z);
+                        element.lookAt(0, 0, z);
+                        this.group.add(element);
+                    }
+                }
+            }
+        }
+
+        init();
+        animate();
+
+        function init() {
+            container = document.getElementById('container');
+
+            // Camera setup
+            camera = new THREE.PerspectiveCamera(
+                60, window.innerWidth / window.innerHeight, 0.1, 5000
+            );
+            camera.position.set(300, 200, 300);
+
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x000000, 200, 1000);
+
+            // Renderer setup
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = params.exposure;
+            container.appendChild(renderer.domElement);
+
+            // Post-processing
+            composer = new EffectComposer(renderer);
+            const renderPass = new RenderPass(scene, camera);
+            composer.addPass(renderPass);
+
+            bloomPass = new UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth, window.innerHeight),
+                params.bloomStrength,
+                params.bloomRadius,
+                params.bloomThreshold
+            );
+            composer.addPass(bloomPass);
+
+            // Controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 50;
+            controls.maxDistance = 1000;
+            controls.autoRotate = params.autoRotate;
+            controls.autoRotateSpeed = 0.5;
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(100, 100, 50);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.camera.near = 0.1;
+            directionalLight.shadow.camera.far = 500;
+            directionalLight.shadow.camera.left = -250;
+            directionalLight.shadow.camera.right = 250;
+            directionalLight.shadow.camera.top = 250;
+            directionalLight.shadow.camera.bottom = -250;
+            scene.add(directionalLight);
+
+            // Point lights for dramatic effect
+            const pointLight1 = new THREE.PointLight(0x00ffff, 1, 300);
+            pointLight1.position.set(0, 0, 0);
+            scene.add(pointLight1);
+
+            // Create detector layers
+            createDetectorLayers();
+
+            // Create particle systems
+            particleGroup = new THREE.Group();
+            scene.add(particleGroup);
+            
+            traceGroup = new THREE.Group();
+            scene.add(traceGroup);
+            
+            beamGroup = new THREE.Group();
+            scene.add(beamGroup);
+
+            // Add beam pipes (visual representation)
+            createBeamPipes();
+
+            // Grid helper
+            const gridHelper = new THREE.GridHelper(400, 40, 0x444444, 0x222222);
+            gridHelper.position.y = -200;
+            scene.add(gridHelper);
+
+            // Axis helper
+            const axesHelper = new THREE.AxesHelper(100);
+            scene.add(axesHelper);
+
+            // Stats
+            stats = new Stats();
+            container.appendChild(stats.dom);
+
+            // GUI
+            setupGUI();
+
+            // Event listeners
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('keypress', onKeyPress);
+            
+            document.getElementById('collision-button').addEventListener('click', () => {
+                if (!collisionInProgress) {
+                    triggerCollision();
+                }
+            });
+
+            updateParticleCount();
+        }
+
+        function createBeamPipes() {
+            const pipeGeometry = new THREE.CylinderGeometry(5, 5, 500, 16);
+            const pipeMaterial = new THREE.MeshPhysicalMaterial({
+                color: 0x333333,
+                metalness: 0.9,
+                roughness: 0.3,
+                transparent: true,
+                opacity: 0.3
+            });
+            
+            const beamPipe = new THREE.Mesh(pipeGeometry, pipeMaterial);
+            beamPipe.rotation.x = Math.PI / 2;
+            scene.add(beamPipe);
+        }
+
+        function createDetectorLayers() {
+            // Inner Detector
+            const innerDetector = new DetectorLayer(50, 'Inner Detector', 0x64ff64);
+            scene.add(innerDetector.group);
+            detectorLayers.push(innerDetector);
+
+            // EM Calorimeter
+            const emCalorimeter = new DetectorLayer(100, 'EM Calorimeter', 0x00ffff);
+            scene.add(emCalorimeter.group);
+            detectorLayers.push(emCalorimeter);
+
+            // Hadronic Calorimeter
+            const hadronicCalorimeter = new DetectorLayer(150, 'Hadronic Calorimeter', 0xffa500);
+            scene.add(hadronicCalorimeter.group);
+            detectorLayers.push(hadronicCalorimeter);
+
+            // Muon Spectrometer
+            const muonSpectrometer = new DetectorLayer(200, 'Muon Spectrometer', 0xff0000);
+            scene.add(muonSpectrometer.group);
+            detectorLayers.push(muonSpectrometer);
+        }
+
+        function triggerCollision() {
+            collisionInProgress = true;
+            document.getElementById('collision-button').disabled = true;
+            document.getElementById('beam-status').style.display = 'block';
+            
+            // Clear existing particles
+            particles.forEach(p => {
+                if (p.mesh) particleGroup.remove(p.mesh);
+            });
+            particles = [];
+            
+            // Create two beam particles coming from opposite sides
+            const beam1 = new BeamParticle(-250, 1);
+            const beam2 = new BeamParticle(250, -1);
+            
+            beamParticles = [beam1, beam2];
+            beamGroup.add(beam1.mesh);
+            beamGroup.add(beam2.mesh);
+            
+            // Animate beam collision
+            const collisionTime = 2500; // 2.5 seconds to collision
+            const startTime = Date.now();
+            
+            const animateBeams = () => {
+                const elapsed = Date.now() - startTime;
+                const progress = elapsed / collisionTime;
+                
+                if (progress < 1) {
+                    // Move beams toward center
+                    beamParticles.forEach(beam => {
+                        beam.update(0.016);
+                    });
+                    
+                    requestAnimationFrame(animateBeams);
+                } else {
+                    // Collision happens!
+                    executeCollision();
+                }
+            };
+            
+            animateBeams();
+        }
+
+        function executeCollision() {
+            // Remove beam particles
+            beamParticles.forEach(beam => {
+                beamGroup.remove(beam.mesh);
+            });
+            beamParticles = [];
+            
+            // Create explosion at center
+            createCollisionExplosion();
+            
+            // Generate collision products based on physics
+            generateCollisionProducts();
+            
+            // Reset UI
+            setTimeout(() => {
+                document.getElementById('collision-button').disabled = false;
+                document.getElementById('beam-status').style.display = 'none';
+                collisionInProgress = false;
+            }, 1000);
+            
+            updateParticleCount();
+        }
+
+        function createCollisionExplosion() {
+            // Create bright flash at collision point
+            const flash = new THREE.PointLight(0xffffff, 10, 300);
+            flash.position.set(0, 0, 0);
+            scene.add(flash);
+            
+            // Create expanding sphere effect
+            const sphereGeometry = new THREE.SphereGeometry(1, 32, 16);
+            const sphereMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 1,
+                side: THREE.BackSide
+            });
+            const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+            scene.add(sphere);
+            
+            // Animate explosion
+            const animateExplosion = () => {
+                flash.intensity *= 0.92;
+                sphere.scale.multiplyScalar(1.15);
+                sphereMaterial.opacity *= 0.95;
+                
+                if (flash.intensity > 0.01) {
+                    requestAnimationFrame(animateExplosion);
+                } else {
+                    scene.remove(flash);
+                    scene.remove(sphere);
+                }
+            };
+            
+            animateExplosion();
+        }
+
+        function generateCollisionProducts() {
+            // Generate particles based on realistic collision physics
+            const particleCount = 30 + Math.floor(Math.random() * 20);
+            
+            for (let i = 0; i < particleCount; i++) {
+                let type;
+                const rand = Math.random();
+                
+                // Particle type distribution (roughly based on real LHC data)
+                if (rand < 0.4) {
+                    // 40% pions/kaons (hadrons)
+                    type = Math.random() > 0.5 ? 'PION' : 'KAON';
+                } else if (rand < 0.6) {
+                    // 20% photons
+                    type = 'PHOTON';
+                } else if (rand < 0.75) {
+                    // 15% electrons/positrons
+                    type = Math.random() > 0.5 ? 'ELECTRON' : 'POSITRON';
+                } else if (rand < 0.9) {
+                    // 15% muons
+                    type = Math.random() > 0.5 ? 'MUON' : 'ANTIMUON';
+                } else {
+                    // 10% neutrinos (invisible)
+                    type = 'NEUTRINO';
+                }
+                
+                // Generate velocity with momentum conservation consideration
+                const theta = Math.random() * Math.PI; // Polar angle
+                const phi = Math.random() * Math.PI * 2; // Azimuthal angle
+                const momentum = 10 + Math.random() * 40; // Variable momentum
+                
+                const velocity = new THREE.Vector3(
+                    momentum * Math.sin(theta) * Math.cos(phi),
+                    momentum * Math.sin(theta) * Math.sin(phi),
+                    momentum * Math.cos(theta)
+                );
+                
+                // Add some transverse momentum bias (jets)
+                if (Math.random() < 0.3) {
+                    velocity.multiplyScalar(1.5);
+                }
+                
+                const particle = new Particle(
+                    type,
+                    new THREE.Vector3(0, 0, 0), // Start at collision point
+                    velocity
+                );
+                
+                particles.push(particle);
+                particleGroup.add(particle.mesh);
+            }
+            
+            // Create back-to-back jets (common in high-energy collisions)
+            if (Math.random() < 0.7) {
+                const jetDirection = new THREE.Vector3(
+                    Math.random() - 0.5,
+                    Math.random() - 0.5,
+                    0
+                ).normalize();
+                
+                // Jet 1
+                for (let i = 0; i < 5; i++) {
+                    const velocity = jetDirection.clone()
+                        .multiplyScalar(30 + Math.random() * 20)
+                        .add(new THREE.Vector3(
+                            (Math.random() - 0.5) * 5,
+                            (Math.random() - 0.5) * 5,
+                            (Math.random() - 0.5) * 5
+                        ));
+                    
+                    const particle = new Particle(
+                        Math.random() > 0.5 ? 'PION' : 'KAON',
+                        new THREE.Vector3(0, 0, 0),
+                        velocity
+                    );
+                    
+                    particles.push(particle);
+                    particleGroup.add(particle.mesh);
+                }
+                
+                // Jet 2 (opposite direction)
+                for (let i = 0; i < 5; i++) {
+                    const velocity = jetDirection.clone()
+                        .multiplyScalar(-30 - Math.random() * 20)
+                        .add(new THREE.Vector3(
+                            (Math.random() - 0.5) * 5,
+                            (Math.random() - 0.5) * 5,
+                            (Math.random() - 0.5) * 5
+                        ));
+                    
+                    const particle = new Particle(
+                        Math.random() > 0.5 ? 'PION' : 'KAON',
+                        new THREE.Vector3(0, 0, 0),
+                        velocity
+                    );
+                    
+                    particles.push(particle);
+                    particleGroup.add(particle.mesh);
+                }
+            }
+        }
+
+        function setupGUI() {
+            const gui = new GUI();
+
+            const renderFolder = gui.addFolder('Rendering');
+            renderFolder.add(params, 'exposure', 0, 3).onChange(value => {
+                renderer.toneMappingExposure = value;
+            });
+            renderFolder.add(params, 'bloomStrength', 0, 3).onChange(value => {
+                bloomPass.strength = value;
+            });
+            renderFolder.add(params, 'bloomThreshold', 0, 1).onChange(value => {
+                bloomPass.threshold = value;
+            });
+            renderFolder.add(params, 'bloomRadius', 0, 1).onChange(value => {
+                bloomPass.radius = value;
+            });
+
+            const physicsFolder = gui.addFolder('Physics');
+            physicsFolder.add(params, 'magneticFieldStrength', 0, 5).onChange(value => {
+                magneticField.z = value;
+                document.getElementById('field-strength').textContent = value.toFixed(1) + 'T';
+            });
+            physicsFolder.add(params, 'collisionEnergy', 7, 14).name('Collision Energy (TeV)');
+
+            const displayFolder = gui.addFolder('Display');
+            displayFolder.add(params, 'showTraces');
+            displayFolder.add(params, 'traceLength', 10, 200, 1);
+            displayFolder.add(params, 'autoRotate').onChange(value => {
+                controls.autoRotate = value;
+            });
+            displayFolder.add(params, 'showGrid').onChange(value => {
+                const grid = scene.getObjectByName('GridHelper');
+                if (grid) grid.visible = value;
+            });
+
+            gui.open();
+        }
+
+        function updateParticleCount() {
+            const activeParticles = particles.filter(p => p.active).length;
+            document.getElementById('particle-count').textContent = activeParticles;
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onKeyPress(event) {
+            if ((event.key === 'c' || event.key === 'C') && !collisionInProgress) {
+                triggerCollision();
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const deltaTime = 0.016; // ~60fps
+            
+            // Update particles
+            particles.forEach(particle => {
+                particle.update(deltaTime);
+            });
+            
+            // Remove inactive particles periodically
+            if (Math.random() < 0.01) {
+                const activeParticles = particles.filter(p => p.active);
+                if (activeParticles.length !== particles.length) {
+                    particles.forEach(p => {
+                        if (!p.active && p.mesh) {
+                            particleGroup.remove(p.mesh);
+                        }
+                    });
+                    particles = activeParticles;
+                    updateParticleCount();
+                }
+            }
+            
+            // Update traces
+            if (params.showTraces) {
+                updateTraces();
+            }
+            
+            // Update controls
+            controls.update();
+            
+            // Render
+            composer.render();
+            stats.update();
+        }
+
+        function updateTraces() {
+            // Clear existing trace geometry
+            traceGroup.clear();
+            
+            // Draw traces for active particles
+            particles.forEach(particle => {
+                if (particle.trail.length > 1 && particle.active) {
+                    const points = particle.trail.map(t => t.pos);
+                    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                    
+                    const material = new THREE.LineBasicMaterial({
+                        color: particle.type.color,
+                        transparent: true,
+                        opacity: particle.type.name === 'Neutrino' ? 0.2 : 0.5,
+                        linewidth: 1
+                    });
+                    
+                    const line = new THREE.Line(geometry, material);
+                    traceGroup.add(line);
+                }
+            });
+            
+            // Draw beam traces
+            beamParticles.forEach(beam => {
+                if (beam.trail.length > 1) {
+                    const points = beam.trail.map(t => t.pos);
+                    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                    
+                    const material = new THREE.LineBasicMaterial({
+                        color: 0xffffff,
+                        transparent: true,
+                        opacity: 0.8,
+                        linewidth: 2
+                    });
+                    
+                    const line = new THREE.Line(geometry, material);
+                    traceGroup.add(line);
+                }
+            });
+        }
+    </script>
+</body>
+</html>
