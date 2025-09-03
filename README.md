@@ -1,7 +1,13 @@
 # LHC-ATLAS-Experiment-3D-with-FastHDR
 An interactive 3D visualization of particle collisions in the ATLAS detector at CERN's Large Hadron Collider
 
-Visit: https://lhc-atlas-experiment-3-d-with-fast.vercel.app/ 
+# Visit: https://lhc-atlas-experiment-3-d-with-fast.vercel.app/ 
+
+## Video demo:
+![one](https://github.com/user-attachments/assets/2bc482fc-a4c0-4ffb-a2fc-a24b1e5867f5)
+![two](https://github.com/user-attachments/assets/7bde44e3-aca7-4fbd-a310-668e0f1949e2)
+![three](https://github.com/user-attachments/assets/7b3227be-602d-4719-8486-c7ef4ce4de9f)
+
 
 ## Overview
 A cutting-edge educational simulation that brings particle physics to life through real-time 3D visualization of proton-proton collisions at 14 TeV. Built with modern Three.js and FastHDR rendering techniques, this web-based application provides an accurate, interactive representation of how subatomic particles behave in the world's most powerful particle detector.
