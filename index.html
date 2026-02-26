@@ -126,27 +126,35 @@
     </div>
     
     <div id="detector-info">
-        <strong>Detector Layers:</strong>
+        <strong>ATLAS Detector Layers:</strong>
         <div class="layer-info">
-            <div class="layer-color" style="background: rgba(100, 255, 100, 0.8);"></div>
-            <span>Inner Detector (Tracking)</span>
+            <div class="layer-color" style="background: rgba(100, 255, 100, 0.85);"></div>
+            <span>Inner Detector — Pixel · SCT · TRT</span>
         </div>
         <div class="layer-info">
-            <div class="layer-color" style="background: rgba(0, 255, 255, 0.8);"></div>
-            <span>EM Calorimeter</span>
+            <div class="layer-color" style="background: rgba(0, 255, 255, 0.85);"></div>
+            <span>EM Calorimeter (e<sup>±</sup>, γ shower)</span>
         </div>
         <div class="layer-info">
-            <div class="layer-color" style="background: rgba(255, 165, 0, 0.8);"></div>
-            <span>Hadronic Calorimeter</span>
+            <div class="layer-color" style="background: rgba(255, 165, 0, 0.85);"></div>
+            <span>Hadronic Calorimeter (π, K shower)</span>
         </div>
         <div class="layer-info">
-            <div class="layer-color" style="background: rgba(255, 0, 0, 0.8);"></div>
-            <span>Muon Spectrometer</span>
+            <div class="layer-color" style="background: rgba(255, 0, 0, 0.85);"></div>
+            <span>Muon Spectrometer (μ penetrates all)</span>
+        </div>
+        <div class="layer-info">
+            <div class="layer-color" style="background: rgba(26, 58, 138, 0.95); border: 1px solid #4466cc;"></div>
+            <span>Barrel Toroid Magnets (8 coils, ~1 T)</span>
+        </div>
+        <div class="layer-info">
+            <div class="layer-color" style="background: rgba(255, 255, 0, 0.85);"></div>
+            <span>MET arrow — missing E<sub>T</sub> from ν</span>
         </div>
         <br/>
-        <strong>Particles:</strong> <span id="particle-count">0</span><br/>
-        <strong>Magnetic Field:</strong> <span id="field-strength">2T</span><br/>
-        <strong>Collision Energy:</strong> 14 TeV
+        <strong>Active particles:</strong> <span id="particle-count">0</span><br/>
+        <strong>Solenoid:</strong> <span id="field-strength">2</span> T &nbsp;|&nbsp; Toroid: ~1 T<br/>
+        <strong>√s:</strong> 14 TeV &nbsp;|&nbsp; Depth: 100 m underground
     </div>
     
     <button id="collision-button">Trigger Collision Event</button>
@@ -179,8 +187,9 @@
         let particleTraces = [];
         let detectorLayers = [];
         let magneticField = new THREE.Vector3(0, 0, 2);
-        let particleGroup, traceGroup, beamGroup;
+        let particleGroup, traceGroup, beamGroup, showerGroup;
         let collisionInProgress = false;
+        let metArrow = null;
         
         const params = {
             exposure: 5.0,
@@ -197,80 +206,61 @@
             particleGlow: 2.0
         };
 
-        // Particle types with properties - Enhanced with bloom settings
+        // Particle types — each carries stopRadius (transverse r at which it is absorbed)
+        // and showerType ('EM', 'HAD', or null for penetrating / invisible particles).
+        // This drives the layer-accurate calorimeter-shower physics below.
         const ParticleTypes = {
-            PHOTON: { 
-                color: 0x00ff00, 
-                charge: 0, 
-                mass: 0, 
-                name: 'Photon',
-                maxPenetration: 100,
-                emissiveIntensity: 3.0
+            PHOTON: {
+                color: 0xaaff44, charge: 0, mass: 0, name: 'Photon',
+                stopRadius: 100, showerType: 'EM', emissiveIntensity: 3.0
             },
-            ELECTRON: { 
-                color: 0x00a8ff, 
-                charge: -1, 
-                mass: 0.511, 
-                name: 'Electron',
-                maxPenetration: 100,
-                emissiveIntensity: 2.5
+            ELECTRON: {
+                color: 0x44aaff, charge: -1, mass: 0.511, name: 'Electron',
+                stopRadius: 100, showerType: 'EM', emissiveIntensity: 2.5
             },
-            POSITRON: { 
-                color: 0x00ffff, 
-                charge: 1, 
-                mass: 0.511, 
-                name: 'Positron',
-                maxPenetration: 100,
-                emissiveIntensity: 2.5
+            POSITRON: {
+                color: 0x44ffee, charge: 1, mass: 0.511, name: 'Positron',
+                stopRadius: 100, showerType: 'EM', emissiveIntensity: 2.5
             },
-            MUON: { 
-                color: 0xff00ff, 
-                charge: -1, 
-                mass: 105.7, 
-                name: 'Muon',
-                maxPenetration: 250,
-                emissiveIntensity: 3.5
+            MUON: {
+                // Muons are minimum-ionising — penetrate all calorimeters,
+                // only stopped in / beyond the muon spectrometer (r ≈ 240)
+                color: 0xcc44ff, charge: -1, mass: 105.7, name: 'Muon',
+                stopRadius: 240, showerType: null, emissiveIntensity: 3.5
             },
-            ANTIMUON: { 
-                color: 0xff88ff, 
-                charge: 1, 
-                mass: 105.7, 
-                name: 'Anti-muon',
-                maxPenetration: 250,
-                emissiveIntensity: 3.5
+            ANTIMUON: {
+                color: 0xff88ff, charge: 1, mass: 105.7, name: 'Anti-muon',
+                stopRadius: 240, showerType: null, emissiveIntensity: 3.5
             },
-            PION: { 
-                color: 0xff6b00, 
-                charge: 1, 
-                mass: 139.6, 
-                name: 'Pion',
-                maxPenetration: 150,
-                emissiveIntensity: 2.0
+            PION: {
+                // Charged pions are hadrons — shower in the hadronic calorimeter
+                color: 0xff6600, charge: 1, mass: 139.6, name: 'Pion',
+                stopRadius: 150, showerType: 'HAD', emissiveIntensity: 2.0
             },
-            KAON: { 
-                color: 0xffa500, 
-                charge: 1, 
-                mass: 493.7, 
-                name: 'Kaon',
-                maxPenetration: 150,
-                emissiveIntensity: 2.0
+            KAON: {
+                color: 0xff9900, charge: 1, mass: 493.7, name: 'Kaon',
+                stopRadius: 150, showerType: 'HAD', emissiveIntensity: 2.0
             },
-            NEUTRINO: { 
-                color: 0xffff00, 
-                charge: 0, 
-                mass: 0, 
-                name: 'Neutrino',
-                maxPenetration: 300,
-                emissiveIntensity: 0.5
+            NEUTRINO: {
+                // Neutrinos escape undetected — invisible, no calorimeter hit.
+                // Their momentum contributes to Missing Transverse Energy (MET).
+                color: 0xffff00, charge: 0, mass: 0, name: 'Neutrino',
+                stopRadius: 99999, showerType: null, emissiveIntensity: 0
             }
         };
 
         // Beam Particle class for collision - Enhanced bloom
         class BeamParticle {
-            constructor(startZ, direction) {
-                this.position = new THREE.Vector3(0, 0, startZ);
+            // yOffset: vertical separation at the start position that converges
+            // smoothly to zero at the interaction point (z = 0).
+            // This ensures both beams are always spatially distinct — even when
+            // the camera looks directly along the Z (beam) axis.
+            constructor(startZ, direction, yOffset = 0) {
+                this.startZ   = startZ;
+                this.yOffset  = yOffset;
+                this.position = new THREE.Vector3(0, yOffset, startZ);
                 this.velocity = new THREE.Vector3(0, 0, direction * 50);
-                
+
                 // Create mesh for beam particle (proton) with enhanced bloom
                 const geometry = new THREE.SphereGeometry(3, 16, 12);
                 const material = new THREE.MeshPhysicalMaterial({
@@ -282,42 +272,52 @@
                     clearcoat: 1.0,
                     clearcoatRoughness: 0.0,
                     transparent: true,
-                    opacity: 1.0
+                    opacity: 1.0,
+                    depthTest: false   // always visible through any geometry
                 });
-                
+
                 this.mesh = new THREE.Mesh(geometry, material);
+                this.mesh.renderOrder = 999;
                 this.mesh.position.copy(this.position);
-                
+
                 // Add glow sphere around beam particle
                 const glowGeometry = new THREE.SphereGeometry(8, 16, 12);
                 const glowMaterial = new THREE.MeshBasicMaterial({
                     color: 0xffffff,
                     transparent: true,
                     opacity: 0.3,
-                    side: THREE.BackSide
+                    side: THREE.BackSide,
+                    depthTest: false   // glow always shows too
                 });
                 this.glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
+                this.glowMesh.renderOrder = 999;
                 this.mesh.add(this.glowMesh);
-                
+
                 // Trail for beam particle
                 this.trail = [];
             }
-            
+
             update(deltaTime) {
                 const deltaPos = this.velocity.clone().multiplyScalar(deltaTime);
                 this.position.add(deltaPos);
+
+                // Converge Y offset linearly to zero as the beam approaches z = 0.
+                // At the start (|z| = 250) the full offset is applied;
+                // at the collision point (z = 0) both beams meet on-axis.
+                this.position.y = this.yOffset * (Math.abs(this.position.z) / Math.abs(this.startZ));
+
                 this.mesh.position.copy(this.position);
-                
+
                 // Pulse the glow
                 const pulse = Math.sin(Date.now() * 0.01) * 0.2 + 1.0;
                 this.glowMesh.scale.setScalar(pulse);
-                
+
                 // Add to trail
                 this.trail.push({
                     pos: this.position.clone(),
                     opacity: 1.0
                 });
-                
+
                 // Limit trail length
                 if (this.trail.length > 20) {
                     this.trail.shift();
@@ -381,6 +381,13 @@
                 
                 // Trail positions
                 this.trail = [];
+
+                // Has this particle already produced a calorimeter shower?
+                this.hasShowered = false;
+
+                // Neutrinos escape completely undetected — hide mesh entirely.
+                // Their energy registers only as Missing Transverse Energy (MET).
+                if (this.type.name === 'Neutrino') this.mesh.visible = false;
             }
             
             update(deltaTime) {
@@ -429,19 +436,35 @@
                 // Check boundaries and lifetime
                 this.lifetime++;
                 const distance = this.position.length();
-                
-                // Check penetration depth based on particle type
-                if (distance > this.type.maxPenetration) {
-                    // Particle stops at detector layer
-                    this.velocity.multiplyScalar(0.9); // Slow down
-                    if (this.velocity.length() < 0.1) {
+
+                // Calorimeter layer physics —————————————————————————————————
+                // Real ATLAS calorimeters are cylindrical, so we use the
+                // *transverse* (r_xy) radius for barrel stops and |z| for end-caps.
+                if (!this.hasShowered) {
+                    const rTrans = Math.sqrt(
+                        this.position.x * this.position.x +
+                        this.position.y * this.position.y
+                    );
+                    const absZ = Math.abs(this.position.z);
+
+                    // Barrel: absorbed when transverse radius exceeds stopRadius
+                    // End-cap: absorbed when |z| crosses end-cap plane (215) and
+                    //          particle is off-axis (not still inside beam pipe)
+                    const hitBarrel = rTrans > this.type.stopRadius;
+                    const hitEndCap = absZ > 215 && rTrans > 8;
+
+                    if (hitBarrel || hitEndCap) {
+                        this.hasShowered = true;
+                        if (this.type.showerType) {
+                            createShower(this.position.clone(), this.type.showerType);
+                        }
                         this.active = false;
                         this.mesh.visible = false;
                     }
                 }
-                
-                // Remove if too far or too old
-                if (distance > 300 || this.lifetime > this.maxLifetime) {
+
+                // Remove if too far out or lifetime exceeded
+                if (distance > 320 || this.lifetime > this.maxLifetime) {
                     this.active = false;
                     this.mesh.visible = false;
                 }
@@ -588,8 +611,20 @@
             beamGroup = new THREE.Group();
             scene.add(beamGroup);
 
+            showerGroup = new THREE.Group();
+            scene.add(showerGroup);
+
             // Add beam pipes (visual representation)
             createBeamPipes();
+
+            // Outer detector casing — bottom semi-cylinder, open top
+            createOuterCasing();
+
+            // 8-coil barrel toroid magnets
+            createBarrelToroids();
+
+            // End-cap detector discs (forward region coverage)
+            createEndCaps();
 
             // Grid helper
             const gridHelper = new THREE.GridHelper(400, 40, 0x444444, 0x222222);
@@ -629,10 +664,307 @@
                 transparent: true,
                 opacity: 0.3
             });
-            
+
             const beamPipe = new THREE.Mesh(pipeGeometry, pipeMaterial);
             beamPipe.rotation.x = Math.PI / 2;
             scene.add(beamPipe);
+        }
+
+        function createOuterCasing() {
+            const casingRadius = 228;   // just outside Muon Spectrometer (r = 200)
+            const casingLength = 450;
+
+            // ── Main shell material ─────────────────────────────────────────
+            // Dark steel with subtle blue tint; transparent so inner layers are visible
+            const shellMat = new THREE.MeshPhysicalMaterial({
+                color: 0x1a1e2e,
+                metalness: 0.92,
+                roughness: 0.38,
+                transparent: true,
+                opacity: 0.78,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+                emissive: 0x05080f,
+                emissiveIntensity: 0.5
+            });
+
+            // ── Bottom semi-cylinder shell ──────────────────────────────────
+            // CylinderGeometry theta [0 → PI], then rotation.x = PI/2
+            //   maps that arc to the world Y ≤ 0 (bottom) half of the barrel
+            const shellGeom = new THREE.CylinderGeometry(
+                casingRadius, casingRadius, casingLength,
+                80, 1, true,    // openEnded = true (no caps on the cylinder itself)
+                0, Math.PI      // half arc
+            );
+            const shellMesh = new THREE.Mesh(shellGeom, shellMat);
+            shellMesh.rotation.x = Math.PI / 2;
+            shellMesh.renderOrder = 1;
+            scene.add(shellMesh);
+
+            // ── Semi-circular end caps (with beam-pipe hole) ────────────────
+            // RingGeometry lies in the XY plane.
+            // thetaStart = PI, thetaLength = PI  →  arc from -X through -Y to +X
+            //   = the Y < 0 (bottom) semicircle, matching the shell above
+            const capGeom = new THREE.RingGeometry(9, casingRadius, 80, 1, Math.PI, Math.PI);
+            const capMat = shellMat.clone();
+
+            const cap1 = new THREE.Mesh(capGeom, capMat);
+            cap1.position.z = casingLength / 2;
+            cap1.renderOrder = 1;
+            scene.add(cap1);
+
+            const cap2 = new THREE.Mesh(capGeom, capMat);
+            cap2.position.z = -casingLength / 2;
+            cap2.renderOrder = 1;
+            scene.add(cap2);
+
+            // ── Opening-edge lip rails ──────────────────────────────────────
+            // Two metal strips running the full length at x = ±casingRadius, y = 0.
+            // These define the hard edge where the casing stops and the open top begins.
+            // High emissive so they catch the bloom and look like powered rails.
+            const lipMat = new THREE.MeshPhysicalMaterial({
+                color: 0x3a3f5c,
+                metalness: 0.96,
+                roughness: 0.08,
+                emissive: 0x10183a,
+                emissiveIntensity: 1.4
+            });
+            const lipGeom = new THREE.BoxGeometry(6, 6, casingLength);
+            [-casingRadius, casingRadius].forEach(x => {
+                const lip = new THREE.Mesh(lipGeom, lipMat);
+                lip.position.set(x, 0, 0);
+                scene.add(lip);
+            });
+
+            // ── Circumferential structural ribs ────────────────────────────
+            // Half-torus rings sit flush on the outside of the shell at regular
+            // intervals, giving the detector the look of a real cryostat / yoke.
+            // TorusGeometry arc = PI creates the top-half arch by default;
+            // rotation.x = PI flips it to the bottom half (Y < 0).
+            const ribMat = new THREE.MeshPhysicalMaterial({
+                color: 0x252840,
+                metalness: 0.88,
+                roughness: 0.25,
+                emissive: 0x080a12,
+                emissiveIntensity: 0.3
+            });
+            [-180, -90, 0, 90, 180].forEach(zPos => {
+                const ribGeom = new THREE.TorusGeometry(
+                    casingRadius + 3, 5, 12, 80, Math.PI
+                );
+                const rib = new THREE.Mesh(ribGeom, ribMat);
+                rib.rotation.x = Math.PI;   // flip arch to Y ≤ 0 (bottom) half
+                rib.position.z = zPos;
+                scene.add(rib);
+            });
+        }
+
+        // ── Calorimeter shower visualisation ─────────────────────────────────
+        // Creates a brief burst of glowing particles at the point where a
+        // primary particle is absorbed by a calorimeter layer.
+        // EM showers (e±, γ) are compact and yellow-green.
+        // Hadronic showers (π, K) are wider and orange-red.
+        function createShower(position, showerType) {
+            const isEM = showerType === 'EM';
+            const count     = isEM ? 10 : 16;
+            const maxSpread = isEM ? 12 : 22;
+            const color     = isEM ? 0xffee44 : 0xff5500;
+            const lightCol  = isEM ? 0xffff88 : 0xff8844;
+            const initInt   = isEM ? 10 : 6;
+
+            // Transient point-light flash at the shower vertex
+            const light = new THREE.PointLight(lightCol, initInt, 90);
+            light.position.copy(position);
+            scene.add(light);
+            let lt = 0;
+            const decayLight = () => {
+                lt += 0.07;
+                light.intensity = Math.max(0, initInt * (1 - lt));
+                if (lt < 1) requestAnimationFrame(decayLight);
+                else scene.remove(light);
+            };
+            decayLight();
+
+            // Spray particles outward from impact point
+            for (let i = 0; i < count; i++) {
+                const mat  = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1.0 });
+                const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.55, 4, 4), mat);
+                mesh.position.copy(position);
+
+                // Direction: radially outward from collision axis + cone spread
+                const spread = isEM ? 0.5 : 1.1;
+                const dir = position.clone().normalize()
+                    .add(new THREE.Vector3(
+                        (Math.random() - 0.5) * spread,
+                        (Math.random() - 0.5) * spread,
+                        (Math.random() - 0.5) * spread
+                    )).normalize()
+                    .multiplyScalar(maxSpread * (0.4 + Math.random() * 0.6));
+
+                scene.add(mesh);
+                let t = 0;
+                const spd = isEM ? 0.065 : 0.042;
+                const tick = () => {
+                    t += spd;
+                    mesh.position.addScaledVector(dir, spd * 1.6);
+                    mat.opacity = Math.max(0, 1 - t);
+                    mesh.scale.setScalar(1 + t * 2.5);
+                    if (t < 1) requestAnimationFrame(tick);
+                    else scene.remove(mesh);
+                };
+                tick();
+            }
+        }
+
+        // ── Missing Transverse Energy (MET) arrow ────────────────────────────
+        // Neutrinos carry momentum that is never detected. The vector sum of
+        // their transverse momenta appears as a yellow arrow pointing in the
+        // direction of "missing" energy — a key dark-matter search signature.
+        function showMETArrow(metX, metY) {
+            if (metArrow) { scene.remove(metArrow); metArrow = null; }
+            const mag = Math.sqrt(metX * metX + metY * metY);
+            if (mag < 3) return;
+            const dir    = new THREE.Vector3(metX, metY, 0).normalize();
+            const length = Math.min(mag * 4, 175);
+            metArrow = new THREE.ArrowHelper(
+                dir, new THREE.Vector3(0, 0, 0), length,
+                0xffff00, 18, 10
+            );
+            scene.add(metArrow);
+            // Auto-fade after 4 s
+            setTimeout(() => { if (metArrow) { scene.remove(metArrow); metArrow = null; } }, 4000);
+        }
+
+        // ── ATLAS Barrel Toroid Magnets ──────────────────────────────────────
+        // The barrel toroid is the most visually iconic part of ATLAS:
+        // 8 air-core superconducting coils arranged in an octagon around the
+        // beam axis, each coil lying in a plane that contains the Z-axis.
+        // They produce the ~1 T azimuthal field that bends muons in the R-Z plane.
+        function createBarrelToroids() {
+            const nCoils = 8;
+            const rInner = 165, rOuter = 210;   // coil radial extent
+            const zEnd   = 182;                  // coil half-length along Z
+            const barW   = 6,  barH = 6;         // cross-section of coil bar
+            const radLen = rOuter - rInner;       // 45 — length of radial bars
+            const midR   = (rInner + rOuter) / 2; // 187.5 — centre of radial bars
+            const zLen   = zEnd * 2;              // 364 — length of longitudinal bars
+
+            const coilMat = new THREE.MeshPhysicalMaterial({
+                color: 0x1a3a8a,
+                metalness: 0.92,
+                roughness: 0.18,
+                emissive: 0x061228,
+                emissiveIntensity: 0.9
+            });
+
+            for (let i = 0; i < nCoils; i++) {
+                const angle = (i / nCoils) * Math.PI * 2;
+                const cos   = Math.cos(angle);
+                const sin   = Math.sin(angle);
+
+                // Each coil is a rectangular frame built from 4 box-bars.
+                // rotation.z = angle aligns the bar's X axis radially at angle θ.
+
+                // Top radial bar  (z = +zEnd)
+                const topBar = new THREE.Mesh(new THREE.BoxGeometry(radLen, barH, barW), coilMat);
+                topBar.position.set(midR * cos, midR * sin, zEnd);
+                topBar.rotation.z = angle;
+                scene.add(topBar);
+
+                // Bottom radial bar  (z = -zEnd)
+                const botBar = new THREE.Mesh(new THREE.BoxGeometry(radLen, barH, barW), coilMat);
+                botBar.position.set(midR * cos, midR * sin, -zEnd);
+                botBar.rotation.z = angle;
+                scene.add(botBar);
+
+                // Inner longitudinal bar  (r = rInner, runs full length in Z)
+                const innerBar = new THREE.Mesh(new THREE.BoxGeometry(barW, barH, zLen), coilMat);
+                innerBar.position.set(rInner * cos, rInner * sin, 0);
+                innerBar.rotation.z = angle;
+                scene.add(innerBar);
+
+                // Outer longitudinal bar  (r = rOuter)
+                const outerBar = new THREE.Mesh(new THREE.BoxGeometry(barW, barH, zLen), coilMat);
+                outerBar.position.set(rOuter * cos, rOuter * sin, 0);
+                outerBar.rotation.z = angle;
+                scene.add(outerBar);
+
+                // Corner joints — small cubes where bars meet
+                const cGeom = new THREE.BoxGeometry(barW + 3, barH + 3, barW + 3);
+                [[rInner, zEnd], [rOuter, zEnd], [rInner, -zEnd], [rOuter, -zEnd]]
+                    .forEach(([r, z]) => {
+                        const corner = new THREE.Mesh(cGeom, coilMat);
+                        corner.position.set(r * cos, r * sin, z);
+                        scene.add(corner);
+                    });
+            }
+        }
+
+        // ── End-cap detector discs ────────────────────────────────────────────
+        // ATLAS has two end-caps (at each end of the barrel) that extend
+        // detector coverage toward the forward region (high pseudorapidity η).
+        // Each end-cap is a set of concentric ring-shaped detector layers.
+        function createEndCaps() {
+            const endCapZs = [220, -220];
+
+            // Layer definitions — concentric rings matching the barrel colours
+            const layers = [
+                { rIn:  5, rOut:  50, color: 0x64ff64, label: 'ID' },
+                { rIn: 50, rOut: 100, color: 0x00ffff, label: 'EM Cal' },
+                { rIn:100, rOut: 150, color: 0xffa500, label: 'Had Cal' },
+                { rIn:150, rOut: 208, color: 0xff0000, label: 'Muon' }
+            ];
+
+            endCapZs.forEach(z => {
+                layers.forEach(layer => {
+                    // Translucent ring face
+                    const ringMat = new THREE.MeshPhysicalMaterial({
+                        color: layer.color,
+                        transparent: true,
+                        opacity: 0.15,
+                        side: THREE.DoubleSide,
+                        metalness: 0.2,
+                        roughness: 0.8,
+                        emissive: layer.color,
+                        emissiveIntensity: 0.04
+                    });
+                    const ring = new THREE.Mesh(
+                        new THREE.RingGeometry(layer.rIn, layer.rOut, 48, 1),
+                        ringMat
+                    );
+                    ring.position.z = z;
+                    scene.add(ring);
+
+                    // Segmented detector modules arranged in a ring —
+                    // mimics the real module/sector granularity of each sub-detector
+                    const nSegs = 24;
+                    const midR  = (layer.rIn + layer.rOut) / 2;
+                    const segW  = (layer.rOut - layer.rIn) * 0.78;
+                    const segD  = 8;
+                    const segMat = new THREE.MeshPhysicalMaterial({
+                        color: layer.color,
+                        emissive: layer.color,
+                        emissiveIntensity: 0.28,
+                        metalness: 0.8,
+                        roughness: 0.2
+                    });
+
+                    for (let i = 0; i < nSegs; i++) {
+                        const phi = (i / nSegs) * Math.PI * 2;
+                        const seg = new THREE.Mesh(
+                            new THREE.BoxGeometry(segW, 4, segD),
+                            segMat
+                        );
+                        seg.position.set(
+                            midR * Math.cos(phi),
+                            midR * Math.sin(phi),
+                            z + Math.sign(z) * segD * 0.5
+                        );
+                        seg.rotation.z = phi; // align radially
+                        scene.add(seg);
+                    }
+                });
+            });
         }
 
         function createDetectorLayers() {
@@ -668,9 +1000,12 @@
             });
             particles = [];
             
-            // Create two beam particles coming from opposite sides
-            const beam1 = new BeamParticle(-250, 1);
-            const beam2 = new BeamParticle(250, -1);
+            // Create two beam particles coming from opposite sides.
+            // +6 / -6 Y offset at the start ensures they are always spatially
+            // distinct even when viewed end-on along the beam (Z) axis.
+            // Both offsets converge to y = 0 exactly at the collision point.
+            const beam1 = new BeamParticle(-250,  1, +6);
+            const beam2 = new BeamParticle( 250, -1, -6);
             
             beamParticles = [beam1, beam2];
             beamGroup.add(beam1.mesh);
@@ -706,7 +1041,10 @@
                 beamGroup.remove(beam.mesh);
             });
             beamParticles = [];
-            
+
+            // Clear previous MET arrow if still visible
+            if (metArrow) { scene.remove(metArrow); metArrow = null; }
+
             // Create explosion at center
             createCollisionExplosion();
             
@@ -782,7 +1120,10 @@
         function generateCollisionProducts() {
             // Generate particles based on realistic collision physics
             const particleCount = 30 + Math.floor(Math.random() * 20);
-            
+
+            // Accumulate neutrino transverse momenta → Missing Transverse Energy
+            let metX = 0, metY = 0;
+
             for (let i = 0; i < particleCount; i++) {
                 let type;
                 const rand = Math.random();
@@ -826,10 +1167,19 @@
                     new THREE.Vector3(0, 0, 0), // Start at collision point
                     velocity
                 );
-                
+
+                // Neutrinos contribute only to MET — never seen in detector
+                if (type === 'NEUTRINO') {
+                    metX += velocity.x;
+                    metY += velocity.y;
+                }
+
                 particles.push(particle);
                 particleGroup.add(particle.mesh);
             }
+
+            // Show MET arrow after all particles generated
+            showMETArrow(metX, metY);
             
             // Create back-to-back jets (common in high-energy collisions)
             if (Math.random() < 0.7) {
@@ -909,7 +1259,7 @@
             const physicsFolder = gui.addFolder('Physics');
             physicsFolder.add(params, 'magneticFieldStrength', 0, 5).onChange(value => {
                 magneticField.z = value;
-                document.getElementById('field-strength').textContent = value.toFixed(1) + 'T';
+                document.getElementById('field-strength').textContent = value.toFixed(1);
             });
             physicsFolder.add(params, 'collisionEnergy', 7, 14).name('Collision Energy (TeV)');
 
