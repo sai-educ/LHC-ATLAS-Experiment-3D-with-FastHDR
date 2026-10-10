@@ -1,0 +1,167 @@
+:root {
+    --overlay-bg: rgba(0, 0, 0, 0.7);
+    --text: #fff;
+    --link: #47a3ff;
+    --status: #00ff00;
+    --accent-start: #667eea;
+    --accent-end: #764ba2;
+    --accent-glow: rgba(102, 126, 234, 0.4);
+    --accent-glow-strong: rgba(102, 126, 234, 0.6);
+
+    /* Legend swatches — match DETECTOR_LAYERS colours in src/config.js */
+    --layer-inner: rgba(100, 255, 100, 0.85);
+    --layer-em: rgba(0, 255, 255, 0.85);
+    --layer-hadronic: rgba(255, 165, 0, 0.85);
+    --layer-muon: rgba(255, 0, 0, 0.85);
+    --layer-toroid: rgba(26, 58, 138, 0.95);
+    --layer-met: rgba(255, 255, 0, 0.85);
+}
+
+[hidden] {
+    display: none !important;
+}
+
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: #000;
+    overflow: hidden;
+    color: var(--text);
+}
+
+#container {
+    width: 100%;
+    height: 100vh;
+    position: relative;
+}
+
+/* ── Title bar ─────────────────────────────────────────────────────────── */
+
+#info {
+    position: absolute;
+    top: 10px;
+    width: 100%;
+    text-align: center;
+    z-index: 100;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+}
+
+#info .hint {
+    font-size: 12px;
+}
+
+#info a {
+    color: var(--link);
+    text-decoration: none;
+}
+
+#info a:hover {
+    text-decoration: underline;
+}
+
+/* ── Detector legend ───────────────────────────────────────────────────── */
+
+#detector-info {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    padding: 10px;
+    background: var(--overlay-bg);
+    border-radius: 5px;
+    font-size: 12px;
+    max-width: 300px;
+    z-index: 100;
+}
+
+.legend {
+    list-style: none;
+    margin: 0 0 12px;
+    padding: 0;
+}
+
+.layer-info {
+    margin: 5px 0;
+    display: flex;
+    align-items: center;
+}
+
+.layer-color {
+    width: 15px;
+    height: 15px;
+    border-radius: 3px;
+    margin-right: 8px;
+    box-shadow: 0 0 3px rgba(255, 255, 255, 0.3);
+}
+
+.layer-color--inner    { background: var(--layer-inner); }
+.layer-color--em       { background: var(--layer-em); }
+.layer-color--hadronic { background: var(--layer-hadronic); }
+.layer-color--muon     { background: var(--layer-muon); }
+.layer-color--toroid   { background: var(--layer-toroid); border: 1px solid #4466cc; }
+.layer-color--met      { background: var(--layer-met); }
+
+.readout {
+    margin: 0;
+    line-height: 1.4;
+}
+
+/* ── Collision controls ────────────────────────────────────────────────── */
+
+#collision-button {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    padding: 12px 24px;
+    background: linear-gradient(135deg, var(--accent-start) 0%, var(--accent-end) 100%);
+    color: white;
+    border: none;
+    border-radius: 25px;
+    font-size: 16px;
+    cursor: pointer;
+    z-index: 100;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px var(--accent-glow);
+}
+
+#collision-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px var(--accent-glow-strong);
+}
+
+#collision-button:active {
+    transform: translateY(0);
+}
+
+#collision-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+#beam-status {
+    position: absolute;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 16px;
+    background: rgba(0, 0, 0, 0.8);
+    border-radius: 20px;
+    font-size: 14px;
+    color: var(--status);
+    z-index: 100;
+}
+
+/* ── Startup failure ───────────────────────────────────────────────────── */
+
+#fatal-error,
+.fatal-error {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: #000;
+    font-size: 16px;
+    text-align: center;
+    z-index: 1000;
+}
