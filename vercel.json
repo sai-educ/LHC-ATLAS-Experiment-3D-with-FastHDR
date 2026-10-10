@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "",
+  "buildCommand": "echo 'Static site: serving committed files, dist/app.js is prebuilt by npm run build'",
+  "outputDirectory": "."
+}
